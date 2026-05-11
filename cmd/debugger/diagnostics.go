@@ -25,6 +25,7 @@ type Diagnostics struct {
 	CurrentTime       string      `json:"current_time,omitempty"`
 	SetupRuntime      string      `json:"setup_runtime,omitempty"`
 	SetupProcesses    string      `json:"setup_processes,omitempty"`
+	PythonEnvironment string      `json:"python_environment,omitempty"`
 	SetupBinary       string      `json:"setup_binary,omitempty"`
 	RecentSetupLogs   string      `json:"recent_setup_logs,omitempty"`
 	IPAddresses       string      `json:"ip_addresses,omitempty"`
@@ -37,6 +38,7 @@ type Diagnostics struct {
 }
 
 type HTTPCheck struct {
+	Context  string `json:"context"`
 	Method   string `json:"method"`
 	OK       bool   `json:"ok"`
 	Category string `json:"category"`
@@ -93,6 +95,7 @@ func diagnoseTarget(ctx context.Context, ip net.IP, timeout time.Duration, key [
 	diag.CurrentTime = runRemoteField(client, "date -Is 2>/dev/null || date 2>/dev/null || true", 2*time.Second)
 	diag.SetupRuntime = runRemoteField(client, setupRuntimeCommand(), 5*time.Second)
 	diag.SetupProcesses = runRemoteField(client, "ps -eo pid,comm,args 2>/dev/null | grep -Ei 'setup|tici_setup|mici_setup|installer|raylib|ui' | grep -v grep || true", 2*time.Second)
+	diag.PythonEnvironment = runRemoteField(client, pythonEnvironmentCommand(), 6*time.Second)
 	diag.SetupBinary = runRemoteField(client, setupBinaryCommand(), 6*time.Second)
 	diag.RecentSetupLogs = runRemoteField(client, recentSetupLogsCommand(), 5*time.Second)
 	diag.IPAddresses = runRemoteField(client, "ip -4 addr show 2>/dev/null || ifconfig 2>/dev/null || true", 3*time.Second)
@@ -102,6 +105,7 @@ func diagnoseTarget(ctx context.Context, ip net.IP, timeout time.Duration, key [
 	httpOut, err := executeCommand(client, remoteHTTPScript(), 6*time.Second)
 	if err != nil && strings.TrimSpace(httpOut) == "" {
 		diag.HTTPChecks = []HTTPCheck{{
+			Context:  "plain",
 			Method:   "HEAD",
 			OK:       false,
 			Category: "UNKNOWN",
@@ -112,6 +116,7 @@ func diagnoseTarget(ctx context.Context, ip net.IP, timeout time.Duration, key [
 	}
 	if len(diag.HTTPChecks) == 0 {
 		diag.HTTPChecks = []HTTPCheck{{
+			Context:  "plain",
 			Method:   "HEAD",
 			OK:       false,
 			Category: "UNKNOWN",
@@ -131,6 +136,32 @@ func runRemoteField(client *ssh.Client, command string, timeout time.Duration) s
 
 func remoteHTTPScript() string {
 	return `python3 - <<'PY'
+import os
+import socket
+import ssl
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+URL = "https://openpilot.comma.ai"
+
+def classify_error(err):
+  if isinstance(err, urllib.error.HTTPError):
+    return "HTTP_ERROR", str(err.code)
+  reason = getattr(err, "reason", err)
+  text = repr(reason)
+  if isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in text:
+    return "TLS_CERT", text
+  if isinstance(reason, socket.gaierror):
+    return "DNS", text
+  if isinstance(reason, TimeoutError) or "timed out" in text.lower():
+    return "TIMEOUT", text
+  if isinstance(reason, ConnectionRefusedError):
+    return "CONNECTION_REFUSED", text
+  return type(reason).__name__, text
+
+CHECK_SCRIPT = r'''
 import socket
 import ssl
 import urllib.error
@@ -157,10 +188,83 @@ for method in ("HEAD", "GET"):
   try:
     req = urllib.request.Request(URL, method=method)
     with urllib.request.urlopen(req, timeout=2.0) as response:
-      print("HTTPCHECK\t%s\tOK\t%d\t%s" % (method, response.status, response.geturl()))
+      print("RESULT\t%s\tOK\t%d\t%s" % (method, response.status, response.geturl()))
   except Exception as e:
     category, detail = classify_error(e)
-    print("HTTPCHECK\t%s\tFAIL\t%s\t%s" % (method, category, detail))
+    print("RESULT\t%s\tFAIL\t%s\t%s" % (method, category, detail))
+'''
+
+def emit_check(context, method, ok, category, detail):
+  state = "OK" if ok else "FAIL"
+  print("HTTPCHECK\t%s\t%s\t%s\t%s\t%s" % (context, method, state, category, detail))
+
+def run_plain():
+  for method in ("HEAD", "GET"):
+    try:
+      req = urllib.request.Request(URL, method=method)
+      with urllib.request.urlopen(req, timeout=2.0) as response:
+        emit_check("plain", method, True, response.status, response.geturl())
+    except Exception as e:
+      category, detail = classify_error(e)
+      emit_check("plain", method, False, category, detail)
+
+def find_setup_process():
+  for pid in os.listdir("/proc"):
+    if not pid.isdigit():
+      continue
+    try:
+      cmdline = open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ").decode("utf-8", "replace")
+    except Exception:
+      continue
+    if "/usr/comma/setup" in cmdline or "tici_setup" in cmdline or "mici_setup" in cmdline:
+      return pid
+  return None
+
+def run_setup_env():
+  pid = find_setup_process()
+  if pid is None:
+    emit_check("setup-env", "HEAD", False, "NO_SETUP_PROCESS", "could not find running setup process")
+    return
+  try:
+    env_items = open(f"/proc/{pid}/environ", "rb").read().split(b"\0")
+    env = {}
+    for item in env_items:
+      if b"=" in item:
+        key, value = item.split(b"=", 1)
+        env[key.decode("utf-8", "replace")] = value.decode("utf-8", "replace")
+  except Exception as e:
+    emit_check("setup-env", "HEAD", False, "ENV_READ_ERROR", repr(e))
+    return
+  try:
+    cwd = os.readlink(f"/proc/{pid}/cwd")
+  except Exception:
+    cwd = "/"
+  try:
+    exe = os.readlink(f"/proc/{pid}/exe")
+  except Exception:
+    exe = sys.executable
+
+  candidates = [exe, env.get("PYTHON", ""), sys.executable, "python3"]
+  last = None
+  for py in [c for c in candidates if c]:
+    try:
+      proc = subprocess.run([py, "-c", CHECK_SCRIPT], cwd=cwd, env=env, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=6)
+      emitted = False
+      for line in proc.stdout.splitlines():
+        parts = line.split("\t", 4)
+        if len(parts) == 5 and parts[0] == "RESULT":
+          emit_check("setup-env", parts[1], parts[2] == "OK", parts[3], parts[4])
+          emitted = True
+      if proc.returncode == 0 and emitted:
+        return
+      last = proc.stdout.strip() or ("exit code %s" % proc.returncode)
+    except Exception as e:
+      last = repr(e)
+  emit_check("setup-env", "HEAD", False, "SETUP_ENV_EXEC_ERROR", str(last))
+
+run_plain()
+run_setup_env()
 PY`
 }
 
@@ -206,6 +310,59 @@ fi
 '`
 }
 
+func pythonEnvironmentCommand() string {
+	return `python3 - <<'PY'
+import os
+import subprocess
+import sys
+
+def sh(cmd, timeout=2.0):
+  try:
+    return subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT, timeout=timeout, text=True).strip()
+  except Exception as e:
+    return "ERROR:%r" % (e,)
+
+print("current_python=%s" % sys.executable)
+print("current_sys_path=%r" % sys.path)
+print("current_pythonpath=%s" % os.environ.get("PYTHONPATH", ""))
+print("import_openpilot=%s" % sh("python3 - <<'PY2'\ntry:\n import openpilot\n print(getattr(openpilot, '__file__', 'namespace-package'))\nexcept Exception as e:\n print(repr(e))\nPY2"))
+print("openpilot_dirs=%s" % sh("find /data /usr /opt -maxdepth 5 -type d -name openpilot 2>/dev/null | head -40", timeout=4.0))
+
+pids = []
+for pid in os.listdir("/proc"):
+  if not pid.isdigit():
+    continue
+  try:
+    raw = open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+  except Exception:
+    continue
+  if "setup" in raw or "tici_setup" in raw or "mici_setup" in raw:
+    pids.append((int(pid), raw))
+
+for pid, cmdline in sorted(pids):
+  print("process_pid=%s" % pid)
+  print("process_cmdline=%s" % cmdline)
+  try:
+    print("process_cwd=%s" % os.readlink(f"/proc/{pid}/cwd"))
+  except Exception as e:
+    print("process_cwd_error=%r" % (e,))
+  try:
+    print("process_exe=%s" % os.readlink(f"/proc/{pid}/exe"))
+  except Exception as e:
+    print("process_exe_error=%r" % (e,))
+  try:
+    env = open(f"/proc/{pid}/environ", "rb").read().split(b"\0")
+    interesting = []
+    for item in env:
+      text = item.decode("utf-8", "replace")
+      if text.startswith(("PYTHONPATH=", "PYTHONHOME=", "PATH=", "VIRTUAL_ENV=", "LD_LIBRARY_PATH=", "HOME=", "USER=")):
+        interesting.append(text)
+    print("process_python_env=%s" % " | ".join(interesting))
+  except Exception as e:
+    print("process_env_error=%r" % (e,))
+PY`
+}
+
 func recentSetupLogsCommand() string {
 	return `sh -lc '
 (journalctl -n 250 --no-pager 2>/dev/null || logcat -d -t 250 2>/dev/null || true) |
@@ -221,16 +378,32 @@ func parseHTTPChecks(out string) []HTTPCheck {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "\t", 5)
-		if len(parts) >= 4 && parts[0] == "HTTPCHECK" {
+		parts := strings.SplitN(line, "\t", 6)
+		if len(parts) >= 5 && parts[0] == "HTTPCHECK" {
 			check := HTTPCheck{
-				Method:   parts[1],
-				OK:       parts[2] == "OK",
-				Category: parts[3],
+				Context:  parts[1],
+				Method:   parts[2],
+				OK:       parts[3] == "OK",
+				Category: parts[4],
 				Raw:      line,
 			}
-			if len(parts) == 5 {
-				check.Detail = parts[4]
+			if len(parts) == 6 {
+				check.Detail = parts[5]
+			}
+			checks = append(checks, check)
+			continue
+		}
+		legacyParts := strings.SplitN(line, "\t", 5)
+		if len(legacyParts) >= 4 && legacyParts[0] == "HTTPCHECK" {
+			check := HTTPCheck{
+				Context:  "plain",
+				Method:   legacyParts[1],
+				OK:       legacyParts[2] == "OK",
+				Category: legacyParts[3],
+				Raw:      line,
+			}
+			if len(legacyParts) == 5 {
+				check.Detail = legacyParts[4]
 			}
 			checks = append(checks, check)
 		}
@@ -239,9 +412,16 @@ func parseHTTPChecks(out string) []HTTPCheck {
 }
 
 func classifyDiagnostics(checks []HTTPCheck) (status, screen, hint string) {
-	head := findHTTPCheck(checks, "HEAD")
+	head := findHTTPCheck(checks, "setup-env", "HEAD")
+	if head == nil {
+		head = findHTTPCheck(checks, "plain", "HEAD")
+	}
 	if head != nil && head.OK {
-		return "PASS", "Continue or Continue without Wi-Fi", "The current AGNOS setup internet check passed from the device. If the screen still says Waiting for internet, check the setup runtime/log lines for a UI state or setup-thread problem."
+		context := "the device"
+		if head.Context == "setup-env" {
+			context = "the setup process environment"
+		}
+		return "PASS", "Continue or Continue without Wi-Fi", fmt.Sprintf("The current AGNOS setup internet check passed from %s. If the screen still says Waiting for internet, check the setup runtime/log lines for a UI state or setup-thread problem.", context)
 	}
 	if head == nil {
 		return "UNKNOWN", "Waiting for internet", "Could not run the current AGNOS HEAD check."
@@ -264,9 +444,9 @@ func classifyDiagnostics(checks []HTTPCheck) (status, screen, hint string) {
 	return "FAIL", "Waiting for internet", hint
 }
 
-func findHTTPCheck(checks []HTTPCheck, method string) *HTTPCheck {
+func findHTTPCheck(checks []HTTPCheck, context, method string) *HTTPCheck {
 	for i := range checks {
-		if strings.EqualFold(checks[i].Method, method) {
+		if strings.EqualFold(checks[i].Context, context) && strings.EqualFold(checks[i].Method, method) {
 			return &checks[i]
 		}
 	}
@@ -286,8 +466,12 @@ func compactError(err error) string {
 }
 
 func summarizeCheck(check HTTPCheck) string {
-	if check.OK {
-		return fmt.Sprintf("%s OK (%s %s)", check.Method, check.Category, check.Detail)
+	context := check.Context
+	if context == "" {
+		context = "plain"
 	}
-	return fmt.Sprintf("%s FAIL (%s %s)", check.Method, check.Category, check.Detail)
+	if check.OK {
+		return fmt.Sprintf("%s %s OK (%s %s)", context, check.Method, check.Category, check.Detail)
+	}
+	return fmt.Sprintf("%s %s FAIL (%s %s)", context, check.Method, check.Category, check.Detail)
 }
