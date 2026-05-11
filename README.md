@@ -12,6 +12,8 @@ The tool does **not** install software, modify files, restart services, or reboo
 
 The debugger prints its own build version at startup. Include that line when sharing output.
 
+It also writes a tee-style diagnosis log next to the executable, named like `diagnosis-20260511-130000.txt`, while still printing to the console.
+
 ## Windows Quick Start
 
 1. Connect your Windows computer to the same Wi-Fi/network as the comma device.
@@ -48,6 +50,7 @@ It also prints read-only network context from the device, including default rout
 --parallel <n>       Maximum concurrent SSH probes. Default: 64.
 --timeout <duration> SSH probe timeout. Default: 750ms.
 --json               Print machine-readable JSON.
+--log <path>         Write the diagnosis log to a specific path. Use --log - to disable.
 ```
 
 Examples:

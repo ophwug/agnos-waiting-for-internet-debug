@@ -13,15 +13,18 @@ func printTextReport(report *RunReport) {
 		}
 	}
 
-	fmt.Println("Scan complete.")
-	fmt.Printf("Targets probed: %d\n", len(report.Targets))
-	fmt.Printf("SSH reachable devices: %d\n\n", reachable)
+	fmt.Fprintln(output, "Scan complete.")
+	fmt.Fprintf(output, "Targets probed: %d\n", len(report.Targets))
+	fmt.Fprintf(output, "SSH reachable devices: %d\n\n", reachable)
 
 	if reachable == 0 {
-		fmt.Println("No comma/openpilot device accepted SSH with the embedded comma key.")
-		fmt.Println("Make sure the device is powered on, on the same network, and still exposes SSH as user comma.")
-		fmt.Println()
-		fmt.Println("Please share a screenshot of the setup screen along with this output.")
+		fmt.Fprintln(output, "No comma/openpilot device accepted SSH with the embedded comma key.")
+		fmt.Fprintln(output, "Make sure the device is powered on, on the same network, and still exposes SSH as user comma.")
+		fmt.Fprintln(output)
+		if report.LogPath != "" {
+			fmt.Fprintf(output, "Diagnosis log written to: %s\n", report.LogPath)
+		}
+		fmt.Fprintln(output, "Please share a screenshot of the setup screen along with this output.")
 		return
 	}
 
@@ -30,54 +33,61 @@ func printTextReport(report *RunReport) {
 			continue
 		}
 		diag := device.Diagnostics
-		fmt.Printf("Device %s\n", device.IP)
-		fmt.Println(strings.Repeat("-", len("Device ")+len(device.IP)))
+		fmt.Fprintf(output, "Device %s\n", device.IP)
+		fmt.Fprintln(output, strings.Repeat("-", len("Device ")+len(device.IP)))
 		if diag.Hostname != "" {
-			fmt.Printf("Hostname: %s\n", oneLine(diag.Hostname))
+			fmt.Fprintf(output, "Hostname: %s\n", oneLine(diag.Hostname))
 		}
 		if diag.Version != "" {
-			fmt.Printf("OS version: %s\n", oneLine(diag.Version))
+			fmt.Fprintf(output, "OS version: %s\n", oneLine(diag.Version))
 		}
 		if diag.Model != "" {
-			fmt.Printf("Model: %s\n", oneLine(diag.Model))
+			fmt.Fprintf(output, "Model: %s\n", oneLine(diag.Model))
 		}
 		if diag.CurrentTime != "" {
-			fmt.Printf("Device time: %s\n", oneLine(diag.CurrentTime))
+			fmt.Fprintf(output, "Device time: %s\n", oneLine(diag.CurrentTime))
 		}
 		if diag.SetupRuntime != "" {
-			fmt.Printf("Setup runtime: %s\n", oneLine(diag.SetupRuntime))
+			fmt.Fprintf(output, "Setup runtime: %s\n", oneLine(diag.SetupRuntime))
 		}
 		if diag.DefaultRoute != "" {
-			fmt.Printf("Default route: %s\n", oneLine(diag.DefaultRoute))
+			fmt.Fprintf(output, "Default route: %s\n", oneLine(diag.DefaultRoute))
 		}
 		if diag.DNS != "" {
-			fmt.Printf("DNS: %s\n", oneLine(diag.DNS))
+			fmt.Fprintf(output, "DNS: %s\n", oneLine(diag.DNS))
 		}
-		fmt.Println("Setup internet checks:")
+		fmt.Fprintln(output, "Setup internet checks:")
 		for _, check := range diag.HTTPChecks {
-			fmt.Printf("  - %s\n", summarizeCheck(check))
+			fmt.Fprintf(output, "  - %s\n", summarizeCheck(check))
 		}
-		fmt.Printf("Result: %s\n", diag.OverallStatus)
-		fmt.Printf("Likely setup screen: %s\n", diag.LikelySetupScreen)
+		fmt.Fprintf(output, "Result: %s\n", diag.OverallStatus)
+		fmt.Fprintf(output, "Likely setup screen: %s\n", diag.LikelySetupScreen)
 		if diag.Hint != "" {
-			fmt.Printf("Hint: %s\n", diag.Hint)
+			fmt.Fprintf(output, "Hint: %s\n", diag.Hint)
 		}
 		if diag.SetupProcesses != "" {
-			fmt.Println("Setup/UI processes:")
-			fmt.Println(indentBlock(diag.SetupProcesses, "  "))
+			fmt.Fprintln(output, "Setup/UI processes:")
+			fmt.Fprintln(output, indentBlock(diag.SetupProcesses, "  "))
+		}
+		if diag.PythonEnvironment != "" {
+			fmt.Fprintln(output, "Python environment clues:")
+			fmt.Fprintln(output, indentBlock(diag.PythonEnvironment, "  "))
 		}
 		if diag.SetupBinary != "" {
-			fmt.Println("Setup binary/script clues:")
-			fmt.Println(indentBlock(diag.SetupBinary, "  "))
+			fmt.Fprintln(output, "Setup binary/script clues:")
+			fmt.Fprintln(output, indentBlock(diag.SetupBinary, "  "))
 		}
 		if diag.RecentSetupLogs != "" {
-			fmt.Println("Recent setup/network log lines:")
-			fmt.Println(indentBlock(diag.RecentSetupLogs, "  "))
+			fmt.Fprintln(output, "Recent setup/network log lines:")
+			fmt.Fprintln(output, indentBlock(diag.RecentSetupLogs, "  "))
 		}
-		fmt.Println()
+		fmt.Fprintln(output)
 	}
 
-	fmt.Println("Please share a screenshot of the setup screen along with this output.")
+	if report.LogPath != "" {
+		fmt.Fprintf(output, "Diagnosis log written to: %s\n", report.LogPath)
+	}
+	fmt.Fprintln(output, "Please share a screenshot of the setup screen along with this output.")
 }
 
 func oneLine(s string) string {
