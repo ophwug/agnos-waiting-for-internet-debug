@@ -1,5 +1,8 @@
 # Binaries
+.DS_Store
+agnos-waiting-for-internet-debug.exe
+agnos-waiting-for-internet-debug-darwin
+agnos-waiting-for-internet-debug-linux
 c2-neos-alt-fix-install.exe
 c2-neos-alt-fix-install-darwin
 c2-neos-alt-fix-install-linux
-installer

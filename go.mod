@@ -1,4 +1,4 @@
-module neos-manual-install
+module agnos-waiting-for-internet-debug
 
 go 1.22.1
 

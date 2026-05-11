@@ -1,9 +1,9 @@
-# Makefile for the NEOS Manual Install Go application
+# Makefile for the AGNOS/openpilot setup connectivity debugger
 
-# The name of the output binary
-BINARY_NAME_WINDOWS=c2-neos-alt-fix-install.exe
-BINARY_NAME_MACOS=c2-neos-alt-fix-install-darwin
-BINARY_NAME_LINUX=c2-neos-alt-fix-install-linux
+BINARY_NAME_WINDOWS=agnos-waiting-for-internet-debug.exe
+BINARY_NAME_MACOS=agnos-waiting-for-internet-debug-darwin
+BINARY_NAME_LINUX=agnos-waiting-for-internet-debug-linux
+CMD=./cmd/debugger
 
 # Default target executed when you run `make`
 all: build-windows build-macos build-linux
@@ -11,17 +11,17 @@ all: build-windows build-macos build-linux
 # Build the Go application for Windows
 build-windows:
 	@echo "Building for Windows..."
-	GOOS=windows GOARCH=amd64 go build -o $(BINARY_NAME_WINDOWS) ./cmd/installer
+	GOOS=windows GOARCH=amd64 go build -o $(BINARY_NAME_WINDOWS) $(CMD)
 
 # Build the Go application for macOS
 build-macos:
 	@echo "Building for macOS..."
-	GOOS=darwin GOARCH=amd64 go build -o $(BINARY_NAME_MACOS) ./cmd/installer
+	GOOS=darwin GOARCH=amd64 go build -o $(BINARY_NAME_MACOS) $(CMD)
 
 # Build the Go application for Linux
 build-linux:
 	@echo "Building for Linux..."
-	GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME_LINUX) ./cmd/installer
+	GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME_LINUX) $(CMD)
 
 # Clean up the build artifacts
 clean:
@@ -31,7 +31,7 @@ clean:
 # Run the Go application for development
 run:
 	@echo "Running the application for development..."
-	@go run ./cmd/installer
+	@go run $(CMD)
 
 # A phony target to avoid conflicts with a file named 'clean'
 .PHONY: all build clean run

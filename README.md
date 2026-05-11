@@ -1,114 +1,96 @@
-# C2 NEOS Alternate Fix Install
+# AGNOS Waiting for Internet Debug
 
-Stuck on the NEOS setup screen? You're not alone.
+This is a read-only diagnostic tool for AGNOS/openpilot setup screens that are stuck at **Waiting for internet**.
 
-You get this message after "Connect to Wi-Fi":
+It scans your local network, finds comma/openpilot devices that accept SSH as `comma`, and runs the same internet checks that openpilot setup uses against:
 
-> The network "xxxx" is not connected to the internet.
+```text
+https://openpilot.comma.ai
+```
 
-![Screenshot](neos-installer-stuck.jpg)
+The tool does **not** install software, modify files, restart services, or reboot the device.
 
-comma.ai no longer has a working endpoint for the setup tool to use to determine if the device is connected to the internet. This means that the NEOS setup screen after selecting a Wi-Fi network will always show "The network 'xxxx' is not connected to the internet" even when it is.
+## Windows Quick Start
 
-This repository provides a simple, all-in-one tool to bypass the NEOS Setup screen and install openpilot on a **comma two**, **EON**, or a comma two clone device. This is **NOT** designed or needed for AGNOS devices such as the comma three.
+1. Connect your Windows computer to the same Wi-Fi/network as the comma device.
+2. On the device, open **Advanced internet settings** if you can and note the **IP address**.
+3. Download the latest Windows executable:
 
-## Usage
+   [agnos-waiting-for-internet-debug.exe](https://github.com/ophwug/agnos-waiting-for-internet-debug/releases/latest/download/agnos-waiting-for-internet-debug.exe)
 
-This tool can be run on Windows, macOS, or Linux.
+4. Double-click the executable.
+5. Choose whether to enter the device IP address or scan the local network.
+6. Share the printed output and a screenshot of the device setup screen.
 
-### Prerequisites
+If double-clicking closes too quickly, open Command Prompt in the download folder and run:
 
-1.  **Connect to Wi-Fi**
-    *   On your comma two, connect to the **same Wi-Fi network** as the computer you are using to run this tool.
+```cmd
+agnos-waiting-for-internet-debug.exe
+```
 
-2.  **Find Your Device's IP Address**
-    *   On the device, go to **More Options**.
-    *   Touch the triple-dot icon in the upper right corner and select **Advanced**.
-    *   Scroll down and note the **IPv4 address**. It will likely start with `192.168.x.x`, `10.x.x.x`, or `172.16.x.x`.
+## What It Checks
 
-### Fork Selection
+The current AGNOS setup flow checks internet connectivity by making a fast `HEAD` request to `https://openpilot.comma.ai`. Older setup code used a `GET` request. This tool runs both over SSH from the device itself, then reports whether setup is likely seeing:
 
-Upon running the installer, you will be prompted to select a fork of openpilot to install. You can choose from a list of preset forks or opt to install a custom fork by providing the GitHub owner and branch name. The repo is still expected to be named `openpilot` which some forks have setup redirects.
+- `Continue`
+- `Continue without Wi-Fi`
+- `Waiting for internet`
 
-### Windows Instructions
+It also prints read-only network context from the device, including default route, DNS config, device time, model, and OS version when available.
 
-#### For Most Users (Graphical Interface)
+## Options
 
-1.  **Download the Installer**
-    *   [**Click here to download `c2-neos-alt-fix-install.exe`**](https://github.com/ophwug/c2-neos-alt-fix-install/releases/latest/download/c2-neos-alt-fix-install.exe)
-    *   Save the file to a convenient location, like your Downloads folder.
+```text
+--ip <addr>          Debug one known device IP instead of scanning.
+--cidr <cidr>        Scan a specific IPv4 subnet, such as 192.168.1.0/24.
+--parallel <n>       Maximum concurrent SSH probes. Default: 64.
+--timeout <duration> SSH probe timeout. Default: 750ms.
+--json               Print machine-readable JSON.
+```
 
-2.  **Run the Installer**
-    *   Find the `c2-neos-alt-fix-install.exe` file you downloaded.
-    *   **Double-click** the file to run it.
-    *   The application will open a command prompt-like window and guide you through the rest of the process.
-    *   When the process is finished, the window will stay open until you press the Enter key.
+Examples:
 
-#### For Command-Line Users
+```cmd
+agnos-waiting-for-internet-debug.exe --ip 192.168.1.42
+agnos-waiting-for-internet-debug.exe --cidr 192.168.1.0/24
+agnos-waiting-for-internet-debug.exe --json
+```
 
-1.  **Download and Run the Installer**
-    *   Open your preferred command-line tool (**Command Prompt** or **PowerShell**).
-    *   Copy and paste the appropriate command below and press Enter.
+## macOS and Linux
 
-    **For Command Prompt:**
-    ```cmd
-    curl -L "https://github.com/ophwug/c2-neos-alt-fix-install/releases/latest/download/c2-neos-alt-fix-install.exe" -o "c2-neos-alt-fix-install.exe" && c2-neos-alt-fix-install.exe
-    ```
+The tool also builds for macOS and Linux:
 
-    **For PowerShell:**
-    ```powershell
-    Invoke-WebRequest -Uri "https://github.com/ophwug/c2-neos-alt-fix-install/releases/latest/download/c2-neos-alt-fix-install.exe" -OutFile "c2-neos-alt-fix-install.exe" ; ./c2-neos-alt-fix-install.exe
-    ```
-    *   The application will then guide you through the rest of the process.
+```bash
+curl -L https://github.com/ophwug/agnos-waiting-for-internet-debug/releases/latest/download/agnos-waiting-for-internet-debug-darwin -o agnos-waiting-for-internet-debug
+chmod +x agnos-waiting-for-internet-debug
+./agnos-waiting-for-internet-debug
+```
 
-### macOS Instructions
+```bash
+curl -L https://github.com/ophwug/agnos-waiting-for-internet-debug/releases/latest/download/agnos-waiting-for-internet-debug-linux -o agnos-waiting-for-internet-debug
+chmod +x agnos-waiting-for-internet-debug
+./agnos-waiting-for-internet-debug
+```
 
-1.  **Run the Installer**
-    *   Open the **Terminal** application on your Mac.
-    *   Copy and paste the following command into the Terminal and press Enter. This will download, make executable, and run the installer in one step.
-        ```bash
-        curl -L https://github.com/ophwug/c2-neos-alt-fix-install/releases/latest/download/c2-neos-alt-fix-install-darwin -o c2-neos-alt-fix-install-darwin && chmod +x c2-neos-alt-fix-install-darwin && ./c2-neos-alt-fix-install-darwin
-        ```
-    *   The application will then guide you through the rest of the process.
-
-### Linux Instructions
-
-1.  **Run the Installer**
-    *   Open a **Terminal** on your Linux distribution.
-    *   Copy and paste the following command into the Terminal and press Enter. This will download, make executable, and run the installer in one step.
-        ```bash
-        curl -L https://github.com/ophwug/c2-neos-alt-fix-install/releases/latest/download/c2-neos-alt-fix-install-linux -o c2-neos-alt-fix-install-linux && chmod +x c2-neos-alt-fix-install-linux && ./c2-neos-alt-fix-install-linux
-        ```
-    *   The application will then guide you through the rest of the process.
-
-## Device Recovery
-
-If you install software that causes your device to fail to boot, you can perform a system reset to restore it.
-
-1.  **Enter Recovery Mode**
-    *   With the device off but plugged in, press and hold the **Volume Down + Power** buttons simultaneously until the device boots into Recovery Mode.
-    *   **Note:** The touchscreen will not work in Recovery Mode.
-
-2.  **Perform a Reset**
-    *   In Recovery Mode, you can choose to perform a **System Reset** or a **Factory Reset**. A system reset is usually sufficient.
-    *   Use the **Volume Up** and **Volume Down** buttons to navigate the menu and the **Power** button to confirm your selection.
-
-3.  **Reboot**
-    *   After the reset is complete, unplug the device and then plug it back in to power it on.
+Automatic subnet detection is implemented for Windows, macOS, and Linux. If it cannot detect your active LAN, use `--ip` or `--cidr`.
 
 ## For Developers
 
-If you want to build the application yourself:
+Requirements:
 
-1.  Clone this repository.
-2.  Make sure you have Go installed (version 1.22 or later).
-3.  Run `make` to build the Windows, macOS, and Linux executables.
-4.  Run `make run` to run the application for development.
+- Go 1.22 or newer
+- GitHub CLI if publishing releases manually
 
-The build process is automated via GitHub Actions. Every push to the `main` branch will trigger a new build and update the "Latest Build" release.
+Commands:
+
+```bash
+go test ./...
+make
+make run
+```
+
+GitHub Actions builds the Windows, macOS, and Linux executables and publishes them to the `latest` release on every push to `main`.
 
 ## Credits
 
-This project is a Go-based evolution of the original shell script installer created by [jyoung8607](https://github.com/jyoung8607/neos-manual-install). A big thank you for the original work and inspiration!
-
-It was mostly coded with Roo Code and Gemini Pro 2.5.
+This was retooled from `ophwug/c2-neos-alt-fix-install`, which was itself a Go evolution of the original NEOS manual installer by `jyoung8607`.
