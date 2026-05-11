@@ -44,6 +44,9 @@ func printTextReport(report *RunReport) {
 		if diag.CurrentTime != "" {
 			fmt.Printf("Device time: %s\n", oneLine(diag.CurrentTime))
 		}
+		if diag.SetupRuntime != "" {
+			fmt.Printf("Setup runtime: %s\n", oneLine(diag.SetupRuntime))
+		}
 		if diag.DefaultRoute != "" {
 			fmt.Printf("Default route: %s\n", oneLine(diag.DefaultRoute))
 		}
@@ -59,6 +62,14 @@ func printTextReport(report *RunReport) {
 		if diag.Hint != "" {
 			fmt.Printf("Hint: %s\n", diag.Hint)
 		}
+		if diag.SetupProcesses != "" {
+			fmt.Println("Setup/UI processes:")
+			fmt.Println(indentBlock(diag.SetupProcesses, "  "))
+		}
+		if diag.RecentSetupLogs != "" {
+			fmt.Println("Recent setup/network log lines:")
+			fmt.Println(indentBlock(diag.RecentSetupLogs, "  "))
+		}
 		fmt.Println()
 	}
 
@@ -72,4 +83,12 @@ func oneLine(s string) string {
 		return s[:177] + "..."
 	}
 	return s
+}
+
+func indentBlock(s, prefix string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	for i := range lines {
+		lines[i] = prefix + strings.TrimSpace(lines[i])
+	}
+	return strings.Join(lines, "\n")
 }

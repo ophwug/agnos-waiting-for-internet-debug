@@ -23,6 +23,9 @@ type Diagnostics struct {
 	Version           string      `json:"version,omitempty"`
 	Model             string      `json:"model,omitempty"`
 	CurrentTime       string      `json:"current_time,omitempty"`
+	SetupRuntime      string      `json:"setup_runtime,omitempty"`
+	SetupProcesses    string      `json:"setup_processes,omitempty"`
+	RecentSetupLogs   string      `json:"recent_setup_logs,omitempty"`
 	IPAddresses       string      `json:"ip_addresses,omitempty"`
 	DefaultRoute      string      `json:"default_route,omitempty"`
 	DNS               string      `json:"dns,omitempty"`
@@ -87,6 +90,9 @@ func diagnoseTarget(ctx context.Context, ip net.IP, timeout time.Duration, key [
 	diag.Version = runRemoteField(client, "cat /VERSION 2>/dev/null || true", 2*time.Second)
 	diag.Model = runRemoteField(client, "tr -d '\\000' </sys/firmware/devicetree/base/model 2>/dev/null || true", 2*time.Second)
 	diag.CurrentTime = runRemoteField(client, "date -Is 2>/dev/null || date 2>/dev/null || true", 2*time.Second)
+	diag.SetupRuntime = runRemoteField(client, setupRuntimeCommand(), 5*time.Second)
+	diag.SetupProcesses = runRemoteField(client, "ps -eo pid,comm,args 2>/dev/null | grep -Ei 'setup|tici_setup|mici_setup|installer|raylib|ui' | grep -v grep || true", 2*time.Second)
+	diag.RecentSetupLogs = runRemoteField(client, recentSetupLogsCommand(), 5*time.Second)
 	diag.IPAddresses = runRemoteField(client, "ip -4 addr show 2>/dev/null || ifconfig 2>/dev/null || true", 3*time.Second)
 	diag.DefaultRoute = runRemoteField(client, "ip route show default 2>/dev/null || route -n 2>/dev/null || true", 2*time.Second)
 	diag.DNS = runRemoteField(client, "cat /etc/resolv.conf 2>/dev/null || true", 2*time.Second)
@@ -156,6 +162,35 @@ for method in ("HEAD", "GET"):
 PY`
 }
 
+func setupRuntimeCommand() string {
+	return `python3 - <<'PY'
+try:
+  from openpilot.system.hardware import HARDWARE
+  from cereal import log
+  print("device_type=%s" % HARDWARE.get_device_type())
+  print("network_type=%s" % HARDWARE.get_network_type())
+  try:
+    print("os_version=%s" % HARDWARE.get_os_version())
+  except Exception as e:
+    print("os_version_error=%r" % (e,))
+  try:
+    from openpilot.system.ui.lib.application import GuiApplication
+    print("setup_ui=%s" % ("tici_setup" if GuiApplication.big_ui() else "mici_setup"))
+  except Exception as e:
+    print("setup_ui_error=%r" % (e,))
+except Exception as e:
+  print("runtime_probe_error=%r" % (e,))
+PY`
+}
+
+func recentSetupLogsCommand() string {
+	return `sh -lc '
+(journalctl -n 120 --no-pager 2>/dev/null || logcat -d -t 120 2>/dev/null || true) |
+grep -Ei "setup|waiting|internet|openpilot.comma.ai|urllib|traceback|exception|networkmanager|systemd-resolved|timesync|dns|ssl|certificate" |
+tail -40
+'`
+}
+
 func parseHTTPChecks(out string) []HTTPCheck {
 	var checks []HTTPCheck
 	for _, line := range strings.Split(out, "\n") {
@@ -183,7 +218,7 @@ func parseHTTPChecks(out string) []HTTPCheck {
 func classifyDiagnostics(checks []HTTPCheck) (status, screen, hint string) {
 	head := findHTTPCheck(checks, "HEAD")
 	if head != nil && head.OK {
-		return "PASS", "Continue or Continue without Wi-Fi", "The current AGNOS setup internet check passed from the device."
+		return "PASS", "Continue or Continue without Wi-Fi", "The current AGNOS setup internet check passed from the device. If the screen still says Waiting for internet, check the setup runtime/log lines for a UI state or setup-thread problem."
 	}
 	if head == nil {
 		return "UNKNOWN", "Waiting for internet", "Could not run the current AGNOS HEAD check."
