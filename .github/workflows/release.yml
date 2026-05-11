@@ -23,7 +23,11 @@ jobs:
         run: go test ./...
 
       - name: Build application
-        run: make
+        run: |
+          make \
+            VERSION="$(git describe --tags --always --dirty)" \
+            COMMIT="${GITHUB_SHA::7}" \
+            DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
       - name: Create or Update Release
         uses: softprops/action-gh-release@v2

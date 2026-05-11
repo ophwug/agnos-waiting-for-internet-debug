@@ -29,6 +29,7 @@ type Config struct {
 
 type RunReport struct {
 	StartedAt     time.Time      `json:"started_at"`
+	Debugger      string         `json:"debugger"`
 	OpenpilotURL  string         `json:"openpilot_url"`
 	LAN           *LANInfo       `json:"lan,omitempty"`
 	Targets       []string       `json:"targets"`
@@ -41,6 +42,7 @@ func main() {
 	defer waitForExit()
 
 	fmt.Println("openpilot setup internet debugger")
+	fmt.Printf("Version: %s\n", debuggerVersion())
 	fmt.Println("-----------------------------------")
 	fmt.Printf("This read-only tool checks what AGNOS/openpilot setup sees when it says \"Waiting for internet\".\n\n")
 
@@ -137,6 +139,7 @@ func promptStartupMenu(cfg Config) Config {
 func run(ctx context.Context, cfg Config) (*RunReport, error) {
 	report := &RunReport{
 		StartedAt:    time.Now(),
+		Debugger:     debuggerVersion(),
 		OpenpilotURL: openpilotURL,
 	}
 

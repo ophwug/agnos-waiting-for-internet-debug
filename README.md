@@ -10,6 +10,8 @@ https://openpilot.comma.ai
 
 The tool does **not** install software, modify files, restart services, or reboot the device.
 
+The debugger prints its own build version at startup. Include that line when sharing output.
+
 ## Windows Quick Start
 
 1. Connect your Windows computer to the same Wi-Fi/network as the comma device.
