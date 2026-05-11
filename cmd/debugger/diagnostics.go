@@ -25,6 +25,7 @@ type Diagnostics struct {
 	CurrentTime       string      `json:"current_time,omitempty"`
 	SetupRuntime      string      `json:"setup_runtime,omitempty"`
 	SetupProcesses    string      `json:"setup_processes,omitempty"`
+	SetupBinary       string      `json:"setup_binary,omitempty"`
 	RecentSetupLogs   string      `json:"recent_setup_logs,omitempty"`
 	IPAddresses       string      `json:"ip_addresses,omitempty"`
 	DefaultRoute      string      `json:"default_route,omitempty"`
@@ -92,6 +93,7 @@ func diagnoseTarget(ctx context.Context, ip net.IP, timeout time.Duration, key [
 	diag.CurrentTime = runRemoteField(client, "date -Is 2>/dev/null || date 2>/dev/null || true", 2*time.Second)
 	diag.SetupRuntime = runRemoteField(client, setupRuntimeCommand(), 5*time.Second)
 	diag.SetupProcesses = runRemoteField(client, "ps -eo pid,comm,args 2>/dev/null | grep -Ei 'setup|tici_setup|mici_setup|installer|raylib|ui' | grep -v grep || true", 2*time.Second)
+	diag.SetupBinary = runRemoteField(client, setupBinaryCommand(), 6*time.Second)
 	diag.RecentSetupLogs = runRemoteField(client, recentSetupLogsCommand(), 5*time.Second)
 	diag.IPAddresses = runRemoteField(client, "ip -4 addr show 2>/dev/null || ifconfig 2>/dev/null || true", 3*time.Second)
 	diag.DefaultRoute = runRemoteField(client, "ip route show default 2>/dev/null || route -n 2>/dev/null || true", 2*time.Second)
@@ -164,29 +166,50 @@ PY`
 
 func setupRuntimeCommand() string {
 	return `python3 - <<'PY'
-try:
-  from openpilot.system.hardware import HARDWARE
-  from cereal import log
-  print("device_type=%s" % HARDWARE.get_device_type())
-  print("network_type=%s" % HARDWARE.get_network_type())
+import os
+import subprocess
+
+def run(cmd):
   try:
-    print("os_version=%s" % HARDWARE.get_os_version())
+    return subprocess.check_output(cmd, stderr=subprocess.STDOUT, timeout=1.5, text=True).strip()
   except Exception as e:
-    print("os_version_error=%r" % (e,))
-  try:
-    from openpilot.system.ui.lib.application import GuiApplication
-    print("setup_ui=%s" % ("tici_setup" if GuiApplication.big_ui() else "mici_setup"))
-  except Exception as e:
-    print("setup_ui_error=%r" % (e,))
-except Exception as e:
-  print("runtime_probe_error=%r" % (e,))
+    return "ERROR:%r" % (e,)
+
+print("python=%s" % run(["python3", "--version"]))
+print("version_file=%s" % (open("/VERSION").read().strip() if os.path.exists("/VERSION") else "missing"))
+model_path = "/sys/firmware/devicetree/base/model"
+if os.path.exists(model_path):
+  print("model=%s" % open(model_path, "rb").read().replace(b"\0", b"").decode("utf-8", "replace").strip())
+print("networkctl=%s" % run(["sh", "-lc", "networkctl status wlan0 2>/dev/null | sed -n '1,18p'"]))
+print("systemctl_setup=%s" % run(["sh", "-lc", "systemctl status setup 2>/dev/null | sed -n '1,12p' || true"]))
 PY`
+}
+
+func setupBinaryCommand() string {
+	return `sh -lc '
+set +e
+echo "setup_path=$(readlink -f /usr/comma/setup 2>/dev/null || echo /usr/comma/setup)"
+echo "setup_file=$(file /usr/comma/setup 2>/dev/null || true)"
+echo "setup_sha256=$(sha256sum /usr/comma/setup 2>/dev/null | awk "{print \$1}" || true)"
+echo "setup_strings:"
+if command -v strings >/dev/null 2>&1; then
+  strings -a /usr/comma/setup 2>/dev/null |
+    grep -Eio "https?://[^[:space:]\"'"'"'<>]+" |
+    sort -u |
+    head -30
+  strings -a /usr/comma/setup 2>/dev/null |
+    grep -Ei "waiting|internet|network|openpilot|github|comma|urllib|curl|wget|HEAD|GET" |
+    head -80
+else
+  echo "strings command not found"
+fi
+'`
 }
 
 func recentSetupLogsCommand() string {
 	return `sh -lc '
-(journalctl -n 120 --no-pager 2>/dev/null || logcat -d -t 120 2>/dev/null || true) |
-grep -Ei "setup|waiting|internet|openpilot.comma.ai|urllib|traceback|exception|networkmanager|systemd-resolved|timesync|dns|ssl|certificate" |
+(journalctl -n 250 --no-pager 2>/dev/null || logcat -d -t 250 2>/dev/null || true) |
+grep -Ei "setup|waiting|internet|openpilot.comma.ai|github.com|urllib|traceback|exception|error|networkmanager|systemd-resolved|resolved|timesync|dns|ssl|certificate|wlan0|dhcp" |
 tail -40
 '`
 }

@@ -66,6 +66,10 @@ func printTextReport(report *RunReport) {
 			fmt.Println("Setup/UI processes:")
 			fmt.Println(indentBlock(diag.SetupProcesses, "  "))
 		}
+		if diag.SetupBinary != "" {
+			fmt.Println("Setup binary/script clues:")
+			fmt.Println(indentBlock(diag.SetupBinary, "  "))
+		}
 		if diag.RecentSetupLogs != "" {
 			fmt.Println("Recent setup/network log lines:")
 			fmt.Println(indentBlock(diag.RecentSetupLogs, "  "))
