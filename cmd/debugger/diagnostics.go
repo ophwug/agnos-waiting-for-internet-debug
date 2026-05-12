@@ -27,6 +27,7 @@ type Diagnostics struct {
 	SetupProcesses    string      `json:"setup_processes,omitempty"`
 	PythonEnvironment string      `json:"python_environment,omitempty"`
 	StabilitySamples  string      `json:"stability_samples,omitempty"`
+	PersistComma      string      `json:"persist_comma,omitempty"`
 	SetupBinary       string      `json:"setup_binary,omitempty"`
 	RecentSetupLogs   string      `json:"recent_setup_logs,omitempty"`
 	IPAddresses       string      `json:"ip_addresses,omitempty"`
@@ -98,6 +99,7 @@ func diagnoseTarget(ctx context.Context, ip net.IP, timeout time.Duration, key [
 	diag.SetupProcesses = runRemoteField(client, "ps -eo pid,comm,args 2>/dev/null | grep -Ei 'setup|tici_setup|mici_setup|installer|raylib|ui' | grep -v grep || true", 2*time.Second)
 	diag.PythonEnvironment = runRemoteField(client, pythonEnvironmentCommand(), 6*time.Second)
 	diag.StabilitySamples = runRemoteField(client, setupEnvStabilityCommand(), 22*time.Second)
+	diag.PersistComma = runRemoteField(client, "ls -lha /persist/comma 2>&1 || true", 2*time.Second)
 	diag.SetupBinary = runRemoteField(client, setupBinaryCommand(), 6*time.Second)
 	diag.RecentSetupLogs = runRemoteField(client, recentSetupLogsCommand(), 5*time.Second)
 	diag.IPAddresses = runRemoteField(client, "ip -4 addr show 2>/dev/null || ifconfig 2>/dev/null || true", 3*time.Second)

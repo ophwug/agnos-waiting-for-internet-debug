@@ -77,6 +77,10 @@ func printTextReport(report *RunReport) {
 			fmt.Fprintln(output, "Setup-env connectivity stability:")
 			fmt.Fprintln(output, indentBlock(diag.StabilitySamples, "  "))
 		}
+		if diag.PersistComma != "" {
+			fmt.Fprintln(output, "Persist comma directory:")
+			fmt.Fprintln(output, indentBlock(diag.PersistComma, "  "))
+		}
 		if diag.SetupBinary != "" {
 			fmt.Fprintln(output, "Setup binary/script clues:")
 			fmt.Fprintln(output, indentBlock(diag.SetupBinary, "  "))
