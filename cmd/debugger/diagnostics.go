@@ -26,6 +26,7 @@ type Diagnostics struct {
 	SetupRuntime      string      `json:"setup_runtime,omitempty"`
 	SetupProcesses    string      `json:"setup_processes,omitempty"`
 	PythonEnvironment string      `json:"python_environment,omitempty"`
+	StabilitySamples  string      `json:"stability_samples,omitempty"`
 	SetupBinary       string      `json:"setup_binary,omitempty"`
 	RecentSetupLogs   string      `json:"recent_setup_logs,omitempty"`
 	IPAddresses       string      `json:"ip_addresses,omitempty"`
@@ -96,6 +97,7 @@ func diagnoseTarget(ctx context.Context, ip net.IP, timeout time.Duration, key [
 	diag.SetupRuntime = runRemoteField(client, setupRuntimeCommand(), 5*time.Second)
 	diag.SetupProcesses = runRemoteField(client, "ps -eo pid,comm,args 2>/dev/null | grep -Ei 'setup|tici_setup|mici_setup|installer|raylib|ui' | grep -v grep || true", 2*time.Second)
 	diag.PythonEnvironment = runRemoteField(client, pythonEnvironmentCommand(), 6*time.Second)
+	diag.StabilitySamples = runRemoteField(client, setupEnvStabilityCommand(), 22*time.Second)
 	diag.SetupBinary = runRemoteField(client, setupBinaryCommand(), 6*time.Second)
 	diag.RecentSetupLogs = runRemoteField(client, recentSetupLogsCommand(), 5*time.Second)
 	diag.IPAddresses = runRemoteField(client, "ip -4 addr show 2>/dev/null || ifconfig 2>/dev/null || true", 3*time.Second)
@@ -357,6 +359,97 @@ else
   echo "strings command not found"
 fi
 '`
+}
+
+func setupEnvStabilityCommand() string {
+	return `python3 - <<'PY'
+import os
+import subprocess
+import sys
+import time
+
+CHECK_SCRIPT = r'''
+import socket
+import ssl
+import time
+import urllib.error
+import urllib.request
+
+URL = "https://openpilot.comma.ai"
+start = time.monotonic()
+try:
+  req = urllib.request.Request(URL, method="HEAD")
+  with urllib.request.urlopen(req, timeout=2.0) as response:
+    print("OK\t%d\t%s\t%.3f" % (response.status, response.geturl(), time.monotonic() - start))
+except Exception as e:
+  reason = getattr(e, "reason", e)
+  text = repr(reason)
+  if isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in text:
+    category = "TLS_CERT"
+  elif isinstance(reason, socket.gaierror):
+    category = "DNS"
+  elif isinstance(reason, TimeoutError) or "timed out" in text.lower():
+    category = "TIMEOUT"
+  else:
+    category = type(reason).__name__
+  print("FAIL\t%s\t%s\t%.3f" % (category, text, time.monotonic() - start))
+'''
+
+def find_setup_process():
+  for pid in os.listdir("/proc"):
+    if not pid.isdigit():
+      continue
+    try:
+      cmdline = open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ").decode("utf-8", "replace")
+    except Exception:
+      continue
+    if "/usr/comma/setup" in cmdline or "tici_setup" in cmdline or "mici_setup" in cmdline:
+      return pid
+  return None
+
+pid = find_setup_process()
+if pid is None:
+  print("stability_error=no setup process found")
+  raise SystemExit
+
+env = {}
+try:
+  for item in open(f"/proc/{pid}/environ", "rb").read().split(b"\0"):
+    if b"=" in item:
+      key, value = item.split(b"=", 1)
+      env[key.decode("utf-8", "replace")] = value.decode("utf-8", "replace")
+except Exception as e:
+  print("stability_error=env read failed: %r" % (e,))
+  raise SystemExit
+
+try:
+  cwd = os.readlink(f"/proc/{pid}/cwd")
+except Exception:
+  cwd = "/"
+try:
+  exe = os.readlink(f"/proc/{pid}/exe")
+except Exception:
+  exe = sys.executable
+if os.path.exists("/usr/comma/setup"):
+  existing = env.get("PYTHONPATH", "")
+  env["PYTHONPATH"] = "/usr/comma/setup" + ((":" + existing) if existing else "")
+
+print("setup-env stability: 12 HEAD samples, 1 second apart")
+ok_count = 0
+fail_count = 0
+for i in range(12):
+  proc = subprocess.run([exe, "-c", CHECK_SCRIPT], cwd=cwd, env=env, text=True,
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=4)
+  line = proc.stdout.strip().replace("\n", " | ")
+  if line.startswith("OK\t"):
+    ok_count += 1
+  else:
+    fail_count += 1
+  print("sample %02d: %s" % (i + 1, line))
+  if i != 11:
+    time.sleep(1.0)
+print("stability summary: ok=%d fail=%d" % (ok_count, fail_count))
+PY`
 }
 
 func pythonEnvironmentCommand() string {

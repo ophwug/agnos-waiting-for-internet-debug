@@ -73,6 +73,10 @@ func printTextReport(report *RunReport) {
 			fmt.Fprintln(output, "Python environment clues:")
 			fmt.Fprintln(output, indentBlock(diag.PythonEnvironment, "  "))
 		}
+		if diag.StabilitySamples != "" {
+			fmt.Fprintln(output, "Setup-env connectivity stability:")
+			fmt.Fprintln(output, indentBlock(diag.StabilitySamples, "  "))
+		}
 		if diag.SetupBinary != "" {
 			fmt.Fprintln(output, "Setup binary/script clues:")
 			fmt.Fprintln(output, indentBlock(diag.SetupBinary, "  "))
