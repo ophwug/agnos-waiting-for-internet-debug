@@ -78,6 +78,100 @@ func scanAndDiagnose(ctx context.Context, targets []net.IP, parallel int, timeou
 	return out
 }
 
+func scanSSHReachability(ctx context.Context, targets []net.IP, parallel int, timeout time.Duration, key []byte) []DeviceReport {
+	jobs := make(chan net.IP)
+	results := make(chan DeviceReport, len(targets))
+
+	var wg sync.WaitGroup
+	for i := 0; i < parallel; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for ip := range jobs {
+				results <- probeTarget(ctx, ip, timeout, key)
+			}
+		}()
+	}
+
+	for _, ip := range targets {
+		jobs <- ip
+	}
+	close(jobs)
+	wg.Wait()
+	close(results)
+
+	out := make([]DeviceReport, 0, len(targets))
+	for res := range results {
+		out = append(out, res)
+	}
+	return out
+}
+
+func probeTarget(ctx context.Context, ip net.IP, timeout time.Duration, key []byte) DeviceReport {
+	report := DeviceReport{IP: ip.String()}
+	client, err := connectSSH(ctx, ip, timeout, key)
+	if err != nil {
+		report.SSHError = compactError(err)
+		return report
+	}
+	_ = client.Close()
+	report.SSHReachable = true
+	return report
+}
+
+func diagnoseReachableDevices(ctx context.Context, reports []DeviceReport, parallel int, timeout time.Duration, key []byte) []DeviceReport {
+	type job struct {
+		index int
+		ip    net.IP
+	}
+	jobs := make(chan job)
+	results := make(chan jobResult, len(reports))
+
+	workers := parallel
+	if workers < 1 {
+		workers = 1
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for item := range jobs {
+				results <- jobResult{index: item.index, report: diagnoseTarget(ctx, item.ip, timeout, key)}
+			}
+		}()
+	}
+
+	queued := 0
+	for i, report := range reports {
+		if !report.SSHReachable {
+			continue
+		}
+		ip := net.ParseIP(report.IP)
+		if ip == nil || ip.To4() == nil {
+			continue
+		}
+		queued++
+		jobs <- job{index: i, ip: ip.To4()}
+	}
+	close(jobs)
+	wg.Wait()
+	close(results)
+
+	out := append([]DeviceReport(nil), reports...)
+	for i := 0; i < queued; i++ {
+		res := <-results
+		out[res.index] = res.report
+	}
+	return out
+}
+
+type jobResult struct {
+	index  int
+	report DeviceReport
+}
+
 func diagnoseTarget(ctx context.Context, ip net.IP, timeout time.Duration, key []byte) DeviceReport {
 	report := DeviceReport{IP: ip.String()}
 
