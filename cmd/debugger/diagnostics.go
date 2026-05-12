@@ -243,6 +243,10 @@ def run_setup_env():
     exe = os.readlink(f"/proc/{pid}/exe")
   except Exception:
     exe = sys.executable
+  setup_archive = "/usr/comma/setup"
+  if os.path.exists(setup_archive):
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = setup_archive + ((":" + existing) if existing else "")
 
   candidates = [exe, env.get("PYTHON", ""), sys.executable, "python3"]
   last = None
@@ -295,6 +299,51 @@ set +e
 echo "setup_path=$(readlink -f /usr/comma/setup 2>/dev/null || echo /usr/comma/setup)"
 echo "setup_file=$(file /usr/comma/setup 2>/dev/null || true)"
 echo "setup_sha256=$(sha256sum /usr/comma/setup 2>/dev/null | awk "{print \$1}" || true)"
+echo "setup_zip_matches:"
+python3 - <<'"'"'PY'"'"'
+import zipfile
+
+path = "/usr/comma/setup"
+patterns = [
+  "Waiting for internet",
+  "waiting for",
+  "openpilot.comma.ai",
+  "NetworkConnectivityMonitor",
+  "network_connected",
+  "get_network_type",
+  "urlopen",
+  "Request(",
+  "internet",
+  "CONNECTING",
+]
+try:
+  with zipfile.ZipFile(path) as zf:
+    names = zf.namelist()
+    print("zip_entries=%d" % len(names))
+    for name in names:
+      if not name.endswith((".py", ".pyi", ".txt")):
+        continue
+      try:
+        text = zf.read(name).decode("utf-8", "replace")
+      except Exception:
+        continue
+      lower = text.lower()
+      matched = [p for p in patterns if p.lower() in lower]
+      if not matched:
+        continue
+      print("MATCH_FILE %s patterns=%s" % (name, ",".join(matched)))
+      lines = text.splitlines()
+      for idx, line in enumerate(lines):
+        if any(p.lower() in line.lower() for p in patterns):
+          start = max(0, idx - 3)
+          end = min(len(lines), idx + 4)
+          print("SNIPPET %s:%d" % (name, idx + 1))
+          for line_no in range(start, end):
+            print("%4d: %s" % (line_no + 1, lines[line_no][:220]))
+          print("END_SNIPPET")
+except Exception as e:
+  print("zip_probe_error=%r" % (e,))
+PY
 echo "setup_strings:"
 if command -v strings >/dev/null 2>&1; then
   strings -a /usr/comma/setup 2>/dev/null |
@@ -326,6 +375,7 @@ print("current_python=%s" % sys.executable)
 print("current_sys_path=%r" % sys.path)
 print("current_pythonpath=%s" % os.environ.get("PYTHONPATH", ""))
 print("import_openpilot=%s" % sh("python3 - <<'PY2'\ntry:\n import openpilot\n print(getattr(openpilot, '__file__', 'namespace-package'))\nexcept Exception as e:\n print(repr(e))\nPY2"))
+print("import_openpilot_from_setup_zip=%s" % sh("PYTHONPATH=/usr/comma/setup python3 - <<'PY2'\ntry:\n import openpilot\n print(getattr(openpilot, '__file__', 'namespace-package'))\nexcept Exception as e:\n print(repr(e))\nPY2"))
 print("openpilot_dirs=%s" % sh("find /data /usr /opt -maxdepth 5 -type d -name openpilot 2>/dev/null | head -40", timeout=4.0))
 
 pids = []
