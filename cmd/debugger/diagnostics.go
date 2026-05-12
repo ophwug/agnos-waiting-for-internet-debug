@@ -27,6 +27,7 @@ type Diagnostics struct {
 	SetupProcesses    string      `json:"setup_processes,omitempty"`
 	PythonEnvironment string      `json:"python_environment,omitempty"`
 	StabilitySamples  string      `json:"stability_samples,omitempty"`
+	NetworkState      string      `json:"network_state,omitempty"`
 	PersistComma      string      `json:"persist_comma,omitempty"`
 	SetupBinary       string      `json:"setup_binary,omitempty"`
 	RecentSetupLogs   string      `json:"recent_setup_logs,omitempty"`
@@ -99,6 +100,7 @@ func diagnoseTarget(ctx context.Context, ip net.IP, timeout time.Duration, key [
 	diag.SetupProcesses = runRemoteField(client, "ps -eo pid,comm,args 2>/dev/null | grep -Ei 'setup|tici_setup|mici_setup|installer|raylib|ui' | grep -v grep || true", 2*time.Second)
 	diag.PythonEnvironment = runRemoteField(client, pythonEnvironmentCommand(), 6*time.Second)
 	diag.StabilitySamples = runRemoteField(client, setupEnvStabilityCommand(), 22*time.Second)
+	diag.NetworkState = runRemoteField(client, networkStateCommand(), 18*time.Second)
 	diag.PersistComma = runRemoteField(client, "ls -lha /persist/comma 2>&1 || true", 2*time.Second)
 	diag.SetupBinary = runRemoteField(client, setupBinaryCommand(), 6*time.Second)
 	diag.RecentSetupLogs = runRemoteField(client, recentSetupLogsCommand(), 5*time.Second)
@@ -451,6 +453,99 @@ for i in range(12):
   if i != 11:
     time.sleep(1.0)
 print("stability summary: ok=%d fail=%d" % (ok_count, fail_count))
+PY`
+}
+
+func networkStateCommand() string {
+	return `python3 - <<'PY'
+import os
+import subprocess
+import sys
+import time
+
+def sh(label, cmd, timeout=3.0):
+  print("[%s]" % label)
+  try:
+    out = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT,
+                                  timeout=timeout, text=True).strip()
+    print(out or "(no output)")
+  except Exception as e:
+    print("ERROR:%r" % (e,))
+
+def find_setup_process():
+  for pid in os.listdir("/proc"):
+    if not pid.isdigit():
+      continue
+    try:
+      cmdline = open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ").decode("utf-8", "replace")
+    except Exception:
+      continue
+    if "/usr/comma/setup" in cmdline or "tici_setup" in cmdline or "mici_setup" in cmdline:
+      return pid
+  return None
+
+sh("nmcli devices", "nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device status 2>&1 || true")
+sh("nmcli active connections", "nmcli -t -f NAME,UUID,TYPE,DEVICE connection show --active 2>&1 || true")
+sh("nmcli wlan0", "nmcli -t -f GENERAL.DEVICE,GENERAL.TYPE,GENERAL.STATE,GENERAL.CONNECTION,IP4.ADDRESS,IP4.GATEWAY,IP4.DNS device show wlan0 2>&1 || true")
+sh("nmcli broadband", "nmcli -t -f GENERAL.DEVICE,GENERAL.TYPE,GENERAL.STATE,GENERAL.CONNECTION device show cdc-wdm0 2>&1 || true")
+sh("modem list", "mmcli -L 2>&1 || true")
+sh("modem any", "mmcli -m any --output-keyvalue 2>&1 | head -80 || true", timeout=5.0)
+
+pid = find_setup_process()
+if pid is None:
+  print("[setup-env network type samples]")
+  print("ERROR:no setup process found")
+  raise SystemExit
+
+env = {}
+try:
+  for item in open(f"/proc/{pid}/environ", "rb").read().split(b"\0"):
+    if b"=" in item:
+      key, value = item.split(b"=", 1)
+      env[key.decode("utf-8", "replace")] = value.decode("utf-8", "replace")
+except Exception as e:
+  print("[setup-env network type samples]")
+  print("ERROR:env read failed: %r" % (e,))
+  raise SystemExit
+
+try:
+  cwd = os.readlink(f"/proc/{pid}/cwd")
+except Exception:
+  cwd = "/"
+try:
+  exe = os.readlink(f"/proc/{pid}/exe")
+except Exception:
+  exe = sys.executable
+if os.path.exists("/usr/comma/setup"):
+  existing = env.get("PYTHONPATH", "")
+  env["PYTHONPATH"] = "/usr/comma/setup" + ((":" + existing) if existing else "")
+
+sample_script = r'''
+import time
+
+from openpilot.system.hardware import HARDWARE
+
+for i in range(8):
+  start = time.monotonic()
+  try:
+    network_type = HARDWARE.get_network_type()
+    raw = getattr(network_type, "raw", network_type)
+    print("sample %02d: network_type=%s repr=%r raw=%s elapsed=%.3f" %
+          (i + 1, network_type, network_type, raw, time.monotonic() - start))
+  except Exception as e:
+    print("sample %02d: ERROR %r elapsed=%.3f" %
+          (i + 1, e, time.monotonic() - start))
+  if i != 7:
+    time.sleep(1.0)
+'''
+
+print("[setup-env network type samples]")
+try:
+  proc = subprocess.run([exe, "-c", sample_script], cwd=cwd, env=env, text=True,
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=12)
+  print(proc.stdout.strip() or "(no output)")
+except Exception as e:
+  print("ERROR:%r" % (e,))
 PY`
 }
 
