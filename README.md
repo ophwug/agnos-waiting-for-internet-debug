@@ -24,7 +24,7 @@ It also writes a tee-style diagnosis log next to the executable, named like `dia
 
 4. Double-click the executable.
 5. Choose whether to enter the device IP address or scan the local network.
-6. Choose **Run diagnosis** unless someone knowledgeable specifically asks you to use a repair/workaround action.
+6. Choose **Run diagnosis** unless someone knowledgeable specifically asks you to use a repair/workaround/install action.
 7. Share the printed output and a screenshot of the device setup screen.
 
 If double-clicking closes too quickly, open Command Prompt in the download folder and run:
@@ -58,6 +58,8 @@ It also prints read-only network context from the device, including default rout
                     Allow replacing an existing /persist/comma/dongle_id during repair.
 --workaround-modem-state
                     Apply the temporary /dev/shm/modem workaround for a setup bug where internet passes but setup remains stuck.
+--custom-software-url <url>
+                    Install a custom software URL without launching the setup installer UI.
 --no-reboot          Skip reboot prompt/action after dongle ID repair.
 ```
 
@@ -68,6 +70,7 @@ agnos-waiting-for-internet-debug.exe --ip 192.168.1.42
 agnos-waiting-for-internet-debug.exe --cidr 192.168.1.0/24
 agnos-waiting-for-internet-debug.exe --json
 agnos-waiting-for-internet-debug.exe --ip 192.168.1.42 --workaround-modem-state
+agnos-waiting-for-internet-debug.exe --ip 192.168.1.42 --custom-software-url openpilot-test.comma.ai
 ```
 
 ## Guarded Workaround
@@ -75,6 +78,12 @@ agnos-waiting-for-internet-debug.exe --ip 192.168.1.42 --workaround-modem-state
 The **temporary Waiting for Internet workaround** writes `{}` to `/dev/shm/modem` on the device. This is for a specific setup bug where the device can reach `https://openpilot.comma.ai`, but setup still clears the internet state because the modem state file is missing.
 
 Only use this when directed by knowledgeable openpilot/comma users. It is temporary, lives on tmpfs, and disappears after reboot. The tool logs the preflight state, asks for typed confirmation, verifies the write, and then tells the user to watch for the Continue button.
+
+## Guarded Custom Software Install
+
+The **custom software URL install replacement** is for devices where setup can accept a custom software URL, but the setup installer UI crashes before it can clone and hand off to openpilot.
+
+Only use this when directed by knowledgeable openpilot/comma users. It downloads the same installer response using AGNOS setup headers, extracts the embedded GitHub repo and branch, applies the known tici/tizi/mici branch migration, clones to `/data/openpilot`, writes `/data/continue.sh`, and restarts the wrapper. It logs the installer URL, final redirected URL, SHA256, repo, branch, existing `/data/openpilot` state, and every install step before asking for typed confirmation.
 
 ## macOS and Linux
 

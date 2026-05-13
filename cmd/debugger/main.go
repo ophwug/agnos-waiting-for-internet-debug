@@ -34,6 +34,7 @@ type Config struct {
 	JSON              bool
 	LogPath           string
 	RepairDongleID    string
+	CustomSoftwareURL string
 	WorkaroundModem   bool
 	OverwriteDongleID bool
 	NoReboot          bool
@@ -54,12 +55,18 @@ func main() {
 	cfg := parseFlags()
 	defer waitForExit()
 
-	if cfg.JSON && (cfg.RepairDongleID != "" || cfg.WorkaroundModem) {
-		fmt.Fprintf(errorOutput, "Error: --json cannot be combined with repair/workaround actions\n")
+	actionFlagCount := 0
+	for _, enabled := range []bool{cfg.RepairDongleID != "", cfg.WorkaroundModem, cfg.CustomSoftwareURL != ""} {
+		if enabled {
+			actionFlagCount++
+		}
+	}
+	if cfg.JSON && actionFlagCount > 0 {
+		fmt.Fprintf(errorOutput, "Error: --json cannot be combined with repair/workaround/install actions\n")
 		os.Exit(1)
 	}
-	if cfg.RepairDongleID != "" && cfg.WorkaroundModem {
-		fmt.Fprintf(errorOutput, "Error: choose either --repair-dongle-id or --workaround-modem-state, not both\n")
+	if actionFlagCount > 1 {
+		fmt.Fprintf(errorOutput, "Error: choose only one action flag: --repair-dongle-id, --workaround-modem-state, or --custom-software-url\n")
 		os.Exit(1)
 	}
 
@@ -114,6 +121,8 @@ func main() {
 		action = "repair"
 	} else if cfg.WorkaroundModem {
 		action = "modem-workaround"
+	} else if cfg.CustomSoftwareURL != "" {
+		action = "custom-install"
 	} else {
 		action = promptActionMenu(reader)
 	}
@@ -126,6 +135,11 @@ func main() {
 		}
 	case "modem-workaround":
 		if err := runModemStateWorkaround(ctx, cfg, report, reader); err != nil {
+			fmt.Fprintf(errorOutput, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "custom-install":
+		if err := runCustomSoftwareInstall(ctx, cfg, report, reader); err != nil {
 			fmt.Fprintf(errorOutput, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -144,6 +158,7 @@ func parseFlags() Config {
 	flag.BoolVar(&cfg.JSON, "json", false, "print machine-readable JSON")
 	flag.StringVar(&cfg.LogPath, "log", "", "write a tee-style diagnosis log to this file; default is diagnosis-<timestamp>.txt next to the executable")
 	flag.StringVar(&cfg.RepairDongleID, "repair-dongle-id", "", "repair /persist/comma/dongle_id with this 16-character hex dongle ID")
+	flag.StringVar(&cfg.CustomSoftwareURL, "custom-software-url", "", "install a custom software URL without launching the setup installer UI")
 	flag.BoolVar(&cfg.WorkaroundModem, "workaround-modem-state", false, "apply the temporary /dev/shm/modem workaround for setup stuck at Waiting for internet")
 	flag.BoolVar(&cfg.OverwriteDongleID, "overwrite-dongle-id", false, "allow replacing an existing /persist/comma/dongle_id during repair")
 	flag.BoolVar(&cfg.NoReboot, "no-reboot", false, "do not prompt to reboot after a successful dongle ID repair")
@@ -152,6 +167,7 @@ func parseFlags() Config {
 	cfg.IP = strings.TrimSpace(cfg.IP)
 	cfg.CIDR = strings.TrimSpace(cfg.CIDR)
 	cfg.RepairDongleID = strings.TrimSpace(cfg.RepairDongleID)
+	cfg.CustomSoftwareURL = strings.TrimSpace(cfg.CustomSoftwareURL)
 	if cfg.Parallel < 1 {
 		cfg.Parallel = defaultParallel
 	}
@@ -237,7 +253,8 @@ func promptActionMenu(reader *bufio.Reader) string {
 		fmt.Fprintln(output, "  1. Run diagnosis")
 		fmt.Fprintln(output, "  2. Repair missing/incorrect dongle_id")
 		fmt.Fprintln(output, "  3. Apply temporary Waiting for Internet workaround")
-		fmt.Fprint(output, "Select 1, 2, or 3: ")
+		fmt.Fprintln(output, "  4. Install custom software URL without setup installer UI")
+		fmt.Fprint(output, "Select 1, 2, 3, or 4: ")
 
 		choice, _ := reader.ReadString('\n')
 		switch strings.TrimSpace(choice) {
@@ -253,8 +270,12 @@ func promptActionMenu(reader *bufio.Reader) string {
 			fmt.Fprintln(output, "Starting temporary Waiting for Internet workaround.")
 			fmt.Fprintln(output)
 			return "modem-workaround"
+		case "4":
+			fmt.Fprintln(output, "Starting custom software URL install replacement.")
+			fmt.Fprintln(output)
+			return "custom-install"
 		default:
-			fmt.Fprintln(output, "Please choose 1, 2, or 3.")
+			fmt.Fprintln(output, "Please choose 1, 2, 3, or 4.")
 			fmt.Fprintln(output)
 		}
 	}
