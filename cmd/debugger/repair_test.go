@@ -94,4 +94,7 @@ func TestPromptActionMenu(t *testing.T) {
 	if got := promptActionMenu(bufio.NewReader(bytes.NewBufferString("2\n"))); got != "repair" {
 		t.Fatalf("repair action = %q", got)
 	}
+	if got := promptActionMenu(bufio.NewReader(bytes.NewBufferString("3\n"))); got != "modem-workaround" {
+		t.Fatalf("workaround action = %q", got)
+	}
 }

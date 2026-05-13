@@ -134,6 +134,10 @@ func runDongleIDRepair(ctx context.Context, cfg Config, report *RunReport, reade
 }
 
 func chooseRepairTarget(reports []DeviceReport, reader *bufio.Reader, allowPrompt bool) (DeviceReport, error) {
+	return chooseSingleTarget(reports, reader, allowPrompt, "repair")
+}
+
+func chooseSingleTarget(reports []DeviceReport, reader *bufio.Reader, allowPrompt bool, actionName string) (DeviceReport, error) {
 	reachable := make([]DeviceReport, 0, len(reports))
 	for _, report := range reports {
 		if report.SSHReachable {
@@ -141,17 +145,17 @@ func chooseRepairTarget(reports []DeviceReport, reader *bufio.Reader, allowPromp
 		}
 	}
 	if len(reachable) == 0 {
-		return DeviceReport{}, fmt.Errorf("no SSH-reachable device found for repair")
+		return DeviceReport{}, fmt.Errorf("no SSH-reachable device found for %s", actionName)
 	}
 	if len(reachable) == 1 {
 		return reachable[0], nil
 	}
 	if !allowPrompt {
-		return DeviceReport{}, fmt.Errorf("multiple SSH-reachable devices found; pass --ip <device-ip> for repair")
+		return DeviceReport{}, fmt.Errorf("multiple SSH-reachable devices found; pass --ip <device-ip> for %s", actionName)
 	}
 
 	for {
-		fmt.Fprintln(output, "Choose the device to repair:")
+		fmt.Fprintf(output, "Choose the device to %s:\n", actionName)
 		for i, report := range reachable {
 			fmt.Fprintf(output, "  %d. %s\n", i+1, report.IP)
 		}
@@ -159,7 +163,7 @@ func chooseRepairTarget(reports []DeviceReport, reader *bufio.Reader, allowPromp
 		choice, _ := reader.ReadString('\n')
 		idx, err := strconv.Atoi(strings.TrimSpace(choice))
 		if err == nil && idx >= 1 && idx <= len(reachable) {
-			fmt.Fprintf(output, "Repair target selected: %s\n\n", reachable[idx-1].IP)
+			fmt.Fprintf(output, "Target selected for %s: %s\n\n", actionName, reachable[idx-1].IP)
 			return reachable[idx-1], nil
 		}
 		fmt.Fprintln(output, "Please choose one of the listed devices.")

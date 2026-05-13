@@ -1,6 +1,6 @@
 # AGNOS Waiting for Internet Debug
 
-This is a read-only diagnostic tool for AGNOS/openpilot setup screens that are stuck at **Waiting for internet**.
+This is a diagnostic and guarded repair tool for AGNOS/openpilot setup screens that are stuck at **Waiting for internet**.
 
 It scans your local network, finds comma/openpilot devices that accept SSH as `comma`, and runs the same internet checks that openpilot setup uses against:
 
@@ -8,7 +8,7 @@ It scans your local network, finds comma/openpilot devices that accept SSH as `c
 https://openpilot.comma.ai
 ```
 
-The tool does **not** install software, modify files, restart services, or reboot the device.
+Diagnosis mode is read-only. The tool also has explicit, confirmation-gated repair/workaround actions for cases where knowledgeable openpilot/comma users direct you to use them.
 
 The debugger prints its own build version at startup. Include that line when sharing output.
 
@@ -24,7 +24,8 @@ It also writes a tee-style diagnosis log next to the executable, named like `dia
 
 4. Double-click the executable.
 5. Choose whether to enter the device IP address or scan the local network.
-6. Share the printed output and a screenshot of the device setup screen.
+6. Choose **Run diagnosis** unless someone knowledgeable specifically asks you to use a repair/workaround action.
+7. Share the printed output and a screenshot of the device setup screen.
 
 If double-clicking closes too quickly, open Command Prompt in the download folder and run:
 
@@ -51,6 +52,13 @@ It also prints read-only network context from the device, including default rout
 --timeout <duration> SSH probe timeout. Default: 750ms.
 --json               Print machine-readable JSON.
 --log <path>         Write the diagnosis log to a specific path. Use --log - to disable.
+--repair-dongle-id <16hex>
+                    Repair /persist/comma/dongle_id after confirmation.
+--overwrite-dongle-id
+                    Allow replacing an existing /persist/comma/dongle_id during repair.
+--workaround-modem-state
+                    Apply the temporary /dev/shm/modem workaround for a setup bug where internet passes but setup remains stuck.
+--no-reboot          Skip reboot prompt/action after dongle ID repair.
 ```
 
 Examples:
@@ -59,7 +67,14 @@ Examples:
 agnos-waiting-for-internet-debug.exe --ip 192.168.1.42
 agnos-waiting-for-internet-debug.exe --cidr 192.168.1.0/24
 agnos-waiting-for-internet-debug.exe --json
+agnos-waiting-for-internet-debug.exe --ip 192.168.1.42 --workaround-modem-state
 ```
+
+## Guarded Workaround
+
+The **temporary Waiting for Internet workaround** writes `{}` to `/dev/shm/modem` on the device. This is for a specific setup bug where the device can reach `https://openpilot.comma.ai`, but setup still clears the internet state because the modem state file is missing.
+
+Only use this when directed by knowledgeable openpilot/comma users. It is temporary, lives on tmpfs, and disappears after reboot. The tool logs the preflight state, asks for typed confirmation, verifies the write, and then tells the user to watch for the Continue button.
 
 ## macOS and Linux
 
