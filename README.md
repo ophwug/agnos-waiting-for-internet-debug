@@ -87,13 +87,25 @@ Only use this when directed by knowledgeable openpilot/comma users. It downloads
 
 ## macOS and Linux
 
-The tool also builds for macOS and Linux:
+The tool also builds for macOS (Apple Silicon and Intel) and Linux.
+
+Apple Silicon Macs (M1 or newer):
 
 ```bash
-curl -L https://github.com/ophwug/agnos-waiting-for-internet-debug/releases/latest/download/agnos-waiting-for-internet-debug-darwin -o agnos-waiting-for-internet-debug
+curl -L https://github.com/ophwug/agnos-waiting-for-internet-debug/releases/latest/download/agnos-waiting-for-internet-debug-darwin-arm64 -o agnos-waiting-for-internet-debug
 chmod +x agnos-waiting-for-internet-debug
 ./agnos-waiting-for-internet-debug
 ```
+
+Intel Macs:
+
+```bash
+curl -L https://github.com/ophwug/agnos-waiting-for-internet-debug/releases/latest/download/agnos-waiting-for-internet-debug-darwin-amd64 -o agnos-waiting-for-internet-debug
+chmod +x agnos-waiting-for-internet-debug
+./agnos-waiting-for-internet-debug
+```
+
+Linux (x86-64):
 
 ```bash
 curl -L https://github.com/ophwug/agnos-waiting-for-internet-debug/releases/latest/download/agnos-waiting-for-internet-debug-linux -o agnos-waiting-for-internet-debug

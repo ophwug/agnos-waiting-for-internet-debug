@@ -37,7 +37,8 @@ jobs:
           body: "Latest automated build of the AGNOS/openpilot setup connectivity debugger. Windows users should download agnos-waiting-for-internet-debug.exe."
           files: |
             agnos-waiting-for-internet-debug.exe
-            agnos-waiting-for-internet-debug-darwin
+            agnos-waiting-for-internet-debug-darwin-amd64
+            agnos-waiting-for-internet-debug-darwin-arm64
             agnos-waiting-for-internet-debug-linux
           make_latest: true
         env:
